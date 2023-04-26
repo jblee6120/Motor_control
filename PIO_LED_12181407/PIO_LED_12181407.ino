@@ -57,20 +57,18 @@ void loop()
 	if (Serial.available()) //시리얼 통신으로 정보를 받아오면
 	{
 		data_in = Serial.read(); //시리얼 통신으로 받은 정보를 저장한다.
-		if (data_in == '+') //+를 입력받을 때
-		{
-			if (sample_time >= 2000) sample_time = 2000; //샘플링 시간이 2초 이상이면, 샘플링 시간을 2초로 한다.
-			else sample_time += 100; //범위 내라면, 샘플링 시간을 100ms 증가시킨다.
-		}
-
-		if (data_in == '-') //-를 입력받으면
-		{
-			sample_time -= 100; //샘플링 시간을 100ms 줄인다.
-			if (sample_time <= 100) sample_time = 100; //100ms 미만이라면, 샘플링 시간을 100ms로 고정시킨다.
-		}
 
 		switch (data_in) //받은 data로 switch문으로 나눠본다.
 		{
+		case '+':
+			if (sample_time >= 2000) sample_time = 2000; //샘플링 시간이 2초 이상이면, 샘플링 시간을 2초로 한다.
+			else sample_time += 100; //범위 내라면, 샘플링 시간을 100ms 증가시킨다.
+			break;
+
+		case '-':
+			sample_time -= 100; //샘플링 시간을 100ms 줄인다.
+			if (sample_time <= 100) sample_time = 100; //100ms 미만이라면, 샘플링 시간을 100ms로 고정시킨다.
+			break;
 		case '1': //1일 경우
 			data_p = data; //data_p 포인터가 data 배열을 가리키도록 한다.
 			break;
