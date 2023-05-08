@@ -1,5 +1,5 @@
 //12181407 이종범 모터제어 PIO Interrupt 과제
-//Youtube Link: 
+//Youtube Link: https://youtu.be/qtVNFfz8QI8
 /*pio interrupt를 이용한 초당 스위치 눌린 횟수를 구하는 프로그램
 * 
 * 핀 설정

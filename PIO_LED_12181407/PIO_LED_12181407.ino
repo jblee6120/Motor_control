@@ -1,7 +1,7 @@
 //12181407 이종범 모터제어 PIO과제
 // Aruino DUE의 레지스터를 조작해 LED1~LED8에 불이 1~4개가 들어오는 프로그램
 //+, -로 delay조절, 숫자로 LED의 갯수를 제어할 수 있다.
-// YouTube Link:
+// YouTube Link: https://youtu.be/DrJ3sSfcC9U
 //Pin 연결
 //	DUE		Peripheral
 //	5V			5V
