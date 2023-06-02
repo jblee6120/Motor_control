@@ -8,14 +8,16 @@
 #define A 100
 
 void DWT_Init();
-float speed;
+double speed;
 int32_t cnt1, cnt1_p;
-float count_to_radian;
+double count_to_radian;
 char buffer[128];
-float ref_theta; //°¢º¯À§ ±âÁØ°ª
-float theta, theta_p; //°¢º¯À§ Ãâ·Â, °¢º¯À§ Ãâ·ÂÀÇ ÀÌÀü °ª.
+double ref_theta; //ê°ë³€ìœ„ ê¸°ì¤€ê°’
+double ref_theta_p = 0;
+double theta, theta_p; //ê°ë³€ìœ„ ì¶œë ¥, ê°ë³€ìœ„ ì¶œë ¥ì˜ ì´ì „ ê°’.
 
-float sample_time = 0.005;
+double sim_time = 0;
+double sample_time = 0.005;
 uint32_t MicrosSampleTime;
 uint32_t MicrosCycle;
 uint32_t SampleTimeCycle;
@@ -24,22 +26,24 @@ uint32_t start_time, end_time;
 
 void encoder_init();
 void pwm_init();
-
+void pio_init();
+void configure_adc();
 class PIV {
 public:
-	float Kp, Ki, Kv, Ka;
-	float err_theta, err_w;
-	float err_theta_p, err_w_p;
-	float integral;
-	float derivative_theta_ref;
-	float ts;
-	float output_max;
-	float output_min;
-	float out_tmp;
-	float out;
-	float anti_w_err;
-	float PIV_control();
-	PIV(float kp, float ki, float kv, float ka);
+	double Kp, Ki, Kv, Ka;
+	double err_theta, w_err;
+	double err_theta_p, err_w_p;
+	double integral;
+	double r_dot;
+	double ts;
+	double output_max;
+	double output_min;
+	double out_tmp;
+	double out;
+	double anti_w_err;
+	double w_ref;
+	double PIV_control();
+	PIV(double kp, double ki, double kv, double ka);
 };
 
 void setup() {
@@ -48,7 +52,9 @@ void setup() {
 	MicrosSampleTime = (uint32_t)(sample_time * 1e6);
 	MicrosCycle = SystemCoreClock / 1000000;
 	SampleTimeCycle = MicrosCycle * MicrosSampleTime;
-
+	pwm_init();
+	pio_init();
+	configure_adc();
 	encoder_init();
 	cnt1_p = 0;
 	count_to_radian = 2 * PI / PPR;
@@ -58,24 +64,42 @@ void setup() {
 	end_time = start_time + SampleTimeCycle;
 }
 
-PIV PIV_con(P, I, V, A); //PIV À§Ä¡Á¦¾î¸¦ ¼öÇàÇÏ´Â ÀÎ½ºÅÏ½º ¼±¾ğ
-
+PIV PIV_con(P, I, V, A); //PIV ìœ„ì¹˜ì œì–´ë¥¼ ìˆ˜í–‰í•˜ëŠ” ì¸ìŠ¤í„´ìŠ¤ ì„ ì–¸
+uint32_t top = 2100;
 void loop() {
-	cnt1 = TC0->TC_CHANNEL[0].TC_CV; //ÇöÀç Ä«¿îÆ® °ª ÀĞ±â
-	speed = count_to_radian * (cnt1 - cnt1_p)/sample_time; //°¢¼Óµµ °è»ê
-	theta = count_to_radian * cnt1; //ÇöÀç °¢º¯À§ °è»ê
+	double duty = 0;
+	double adc_value = 0;
 	
-	Serial.print(theta); //°¢º¯À§, °¢¼Óµµ Ãâ·Â
+	sim_time += sample_time;
+	
+	ref_theta = 100*sin(5*sim_time);
+	//ref_theta = 100;
+	cnt1 = TC0->TC_CHANNEL[0].TC_CV; //í˜„ì¬ ì¹´ìš´íŠ¸ ê°’ ì½ê¸°
+	speed = -count_to_radian * (cnt1 - cnt1_p)/sample_time; //ê°ì†ë„ ê³„ì‚°
+	theta = -count_to_radian * cnt1; //í˜„ì¬ ê°ë³€ìœ„ ê³„ì‚°
+	
+	cnt1_p = cnt1; //ì´ì „ ì¹´ìš´íŠ¸ì— í˜„ì¬ ì¹´ìš´íŠ¸ ê°’ ì €ì¥í•œë‹¤. ë‹¤ìŒì— ë‹¤ì‹œ ë£¨í”„ë¥¼ ëŒ ë•Œ, ê°ì†ë„ë¥¼ ê³„ì‚°í•˜ê¸° ìœ„í•´ ì €ì¥í•¨.
+	theta_p = -count_to_radian * cnt1_p; //ì œì–´ê³„ì‚°ì„ ìœ„í•œ ì§ì „ ìŠ¤í…ì—ì„œì˜ ê°ë³€ìœ„ ê³„ì‚°
+
+	duty = 100.0 / 12.0 * PIV_con.PIV_control();
+	
+	if (duty < 0) {
+		duty = -duty;
+		PIOC->PIO_ODSR &= ~PIO_PC3;
+	}
+
+	else
+	{
+		PIOC->PIO_ODSR |= PIO_PC3;
+	}
+	ref_theta_p = ref_theta;
+	Serial.print(ref_theta);
 	Serial.print(" ");
-	Serial.println(speed);
-	
-	cnt1_p = cnt1; //ÀÌÀü Ä«¿îÆ®¿¡ ÇöÀç Ä«¿îÆ® °ª ÀúÀåÇÑ´Ù. ´ÙÀ½¿¡ ´Ù½Ã ·çÇÁ¸¦ µ¹ ¶§, °¢¼Óµµ¸¦ °è»êÇÏ±â À§ÇØ ÀúÀåÇÔ.
-	theta_p = count_to_radian * cnt1_p; //Á¦¾î°è»êÀ» À§ÇÑ Á÷Àü ½ºÅÜ¿¡¼­ÀÇ °¢º¯À§ °è»ê
-
-	PIV_con.PIV_control();
-
-	while (!((end_time - DWT_CYCCNT) & 0x80000000)); //»ùÇÃ¸µ Å¸ÀÓ 0.005ÃÊ±îÁö Èê·¶´ÂÁö È®ÀÎ.
-	end_time += SampleTimeCycle; //´ÙÀ½ ½Ã°£ ¾÷µ¥ÀÌÆ®
+	Serial.println(theta);
+	PWM->PWM_CH_NUM[0].PWM_CDTYUPD = (uint32_t)(-2100.0 / 100 * duty + 2100.0);
+	PWM->PWM_SCUC = 1;
+	while (!((end_time - DWT_CYCCNT) & 0x80000000)); //ìƒ˜í”Œë§ íƒ€ì„ 0.005ì´ˆê¹Œì§€ í˜ë €ëŠ”ì§€ í™•ì¸.
+	end_time += SampleTimeCycle; //ë‹¤ìŒ ì‹œê°„ ì—…ë°ì´íŠ¸
 }
 
 void DWT_Init(){
@@ -96,7 +120,7 @@ void encoder_init(){
 	TC0->TC_CHANNEL[0].TC_CCR = 5;
 }
 
-PIV::PIV(float kp, float ki, float kv, float ka){
+PIV::PIV(double kp, double ki, double kv, double ka){
 	ts = sample_time;
 	Kp = kp;
 	Ki = ki;
@@ -104,37 +128,87 @@ PIV::PIV(float kp, float ki, float kv, float ka){
 	Ka = ka;
 	err_theta = 0;
 	err_theta_p = 0;
-	err_w = 0;
+	w_err = 0;
 	err_w_p = 0;
 	integral = 0;
-	derivative = 0;
-	ouput_max = 12;
+	r_dot = 0;
+	output_max = 12;
 	output_min = -12;
+	out = 0;
+	out_tmp = 0;
+	anti_w_err = 0;
+	w_ref = 0;
 }
 
 void pwm_init() {
-	PIOC->
+	PIOC->PIO_PDR = PIO_PC2;
+	PIOC->PIO_ABSR |= PIO_PC2;
+
+	pmc_enable_periph_clk(ID_PWM);
+
+	PWM->PWM_DIS = (1U << 0);
+	PWM->PWM_CLK &= ~0x0F000F00;
+	PWM->PWM_CLK &= ~0x00FF0000;
+	PWM->PWM_CLK &= ~0x000000FF;
+	PWM->PWM_CLK |= (1u << 0);
+
+	PWM->PWM_CH_NUM[0].PWM_CMR &= ~0x0000000F;
+	PWM->PWM_CH_NUM[0].PWM_CMR |= ~0x0B;
+	PWM->PWM_CH_NUM[0].PWM_CMR |= 1u << 8;
+	PWM->PWM_CH_NUM[0].PWM_CMR &= ~(1u << 9);
+
+	PWM->PWM_CH_NUM[0].PWM_CMR |= (1u << 16);
+
+	PWM->PWM_CH_NUM[0].PWM_DT = 0x00030003;
+
+	PWM->PWM_CH_NUM[0].PWM_CPRD = 2100;
+
+	PWM->PWM_CH_NUM[0].PWM_CDTY = 0;
+
+	PWM->PWM_SCM |= 0x00000007;
+	PWM->PWM_SCM &= ~0x00030000;
+
+	PWM->PWM_ENA = 1u << 0;
 }
 
-float PIV::PIV_control()
-{
-	//reference position°ú output reference°£ÀÇ ¿ÀÂ÷ ±¸ÇÏ±â
-	err_theta = ref_theta - theta;
-	derivative_theta_ref = (theta - theta_p) / ts; //VÁ¦¾î¸¦ À§ÇÑ °¢º¯À§ ¿ÀÂ÷ ±¸ÇÏ±â
-	err_w = derivative_theta_ref + Kp*err_theta - speed; //¼Óµµ¿ÀÂ÷¸¦ ±¸ÇÏ´Â °úÁ¤. °¢º¯À§ ¿ÀÂ÷¿¡ °è¼ö¸¦ Ãß°¡ÇØ¾ß ÇÔ.
+void pio_init() {
+	pmc_enable_periph_clk(ID_PIOC);
+	PIOC->PIO_PER |= PIO_PC3;
+	PIOC->PIO_OER |= PIO_PC3;
+	PIOC->PIO_IDR |= PIO_PC3;
+	PIOC->PIO_OWER |= PIO_PC3;
+	PIOC->PIO_CODR |= PIO_PC3;
+}
 
-	//anti-windup ºÎºĞ
-	
-	out_tmp = Kv * err_w + Ki * integral;
+void configure_adc() {
+	pmc_enable_periph_clk(ID_ADC);
+
+	adc_disable_all_channel(ADC);
+
+	adc_init(ADC, SystemCoreClock, ADC_FREQ_MAX, ADC_STARTUP_FAST);
+
+	adc_configure_timing(ADC, 1, ADC_SETTLING_TIME_3, 1); //ADC íƒ€ì´ë° ì„¤ì •í•¨ìˆ˜
+	adc_set_resolution(ADC, ADC_12_BITS); //ADCì˜ resolutionì„ 12bitë¡œ ì„¤ì •
+
+	adc_enable_channel(ADC, ADC_CHANNEL_0); //ADC ì±„ë„ 0ë²ˆì„ í™œì„±í™”
+}
+
+double PIV::PIV_control()
+{
+	//reference positionê³¼ output referenceê°„ì˜ ì˜¤ì°¨ êµ¬í•˜ê¸°
+	err_theta = ref_theta - theta;
+	r_dot = (ref_theta - ref_theta_p) / ts;
+	w_ref = Kp * err_theta + r_dot;
+
+	w_err = w_ref - speed;
+	integral += ts * (Ki * w_err + Ka*anti_w_err);
+	out_tmp = Kv * w_err + integral;
 
 	//anti-windup
 	if (out_tmp >= output_max) out = output_max;
 	else if (out_tmp <= output_min) out = output_min;
 	else out = out_tmp;
-
 	anti_w_err = out - out_tmp;
-
-	integral += ts * (err_w + Ka * anti_w_err); //¿ÀÂ÷ÀûºĞ, anti-windupµÈ °ªµµ ³Ö¾î¾ß ÇÔ.
-
-	//theta_p = theta;
+	return out;
+	//theta_p =
 }
